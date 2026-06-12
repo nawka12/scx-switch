@@ -165,7 +165,7 @@ StartLimitIntervalSec=60
 WantedBy=multi-user.target
 ```
 
-The `Conflicts=scx_loader.service` line prevents both from being active at once. While `scx-switch.service` is enabled, `scx_loader.service` is disabled (and gets re-enabled by `scx-switch revert`).
+The `Conflicts=scx_loader.service` line prevents both from being active at once. While `scx-switch.service` is enabled, `scx_loader.service` is **masked** (and gets unmasked + re-enabled by `scx-switch off`/`revert`). Masking matters: `scx_loader` is DBus-activated, so merely opening the `scx-manager` GUI would start it even when disabled — and via `Conflicts=` that would *silently* stop your scheduler and drop the kernel back to EEVDF. With the unit masked, that activation fails with an error instead.
 
 ### Comparison with other approaches
 
@@ -176,6 +176,18 @@ The `Conflicts=scx_loader.service` line prevents both from being active at once.
 | Supports schedulers not yet in scx_loader (e.g. `scx_flow`)? | Yes | Yes | No |
 | Easy revert? | One command | Manual | n/a |
 | Boots into chosen scheduler? | Yes | Depends | Yes (via scx_loader state) |
+
+---
+
+## Upgrading from an older scx-switch
+
+Older versions only **disabled** `scx_loader.service` while a scheduler was active. That left it DBus-activatable: opening the `scx-manager` GUI would start it and silently stop your scheduler (kernel falls back to EEVDF). If you have an active config from an older version, either re-run `setup.sh` (it migrates automatically) or fix it by hand:
+
+```bash
+sudo systemctl mask scx_loader.service
+```
+
+`scx-switch status` warns when you're in this state.
 
 ---
 
@@ -191,7 +203,7 @@ rm -rf ~/src/scx-switch ~/src/scx
 
 ## Caveats
 
-- `scx-switch.service` and `scx_loader.service` are mutually exclusive (via `Conflicts=`). While `scx-switch` is the active mechanism, the `scx-manager` GUI and `scxctl` won't work — they talk to `scx_loader`. Use `scx-switch off` or `revert` to give control back.
+- `scx-switch.service` and `scx_loader.service` are mutually exclusive (via `Conflicts=`). While `scx-switch` is the active mechanism, `scx_loader.service` is masked, so the `scx-manager` GUI and `scxctl` fail with an error — this is intentional: they DBus-activate `scx_loader`, which would otherwise silently kill your scheduler. Use `scx-switch off` or `revert` to give control back.
 - The `repo` source builds the **entire** workspace by default (16+ schedulers and tools). First build can take 5–15 minutes; subsequent builds are incremental.
 - If `pacman -Syu` updates `scx-scheds`, your `/usr/bin/scx_*` move forward but your `/usr/local/bin/scx_*` don't — run `scx-switch update` to refresh the repo build too.
 

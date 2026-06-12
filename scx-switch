@@ -84,11 +84,12 @@ cmd_use() {
     # Stop any leftover transient unit from earlier experiments.
     systemctl stop scx-flow.service 2>/dev/null || true
 
-    # Take scx_loader out of the way (Conflicts= in the unit also handles
-    # the active side, but disabling prevents auto-start at next boot).
-    if systemctl is-enabled scx_loader.service >/dev/null 2>&1; then
-        systemctl disable --now scx_loader.service 2>/dev/null || true
-    fi
+    # Take scx_loader out of the way. Disabling is not enough: the
+    # scx-manager GUI DBus-activates scx_loader.service even when disabled,
+    # and via Conflicts= that would silently stop this service (kernel
+    # falls back to EEVDF). Masking makes that activation fail instead.
+    systemctl disable --now scx_loader.service 2>/dev/null || true
+    systemctl mask scx_loader.service 2>/dev/null || true
 
     systemctl enable scx-switch.service >/dev/null
     systemctl restart scx-switch.service
@@ -132,6 +133,18 @@ cmd_status() {
         "$(_se scx-switch.service)" "$(_sa scx-switch.service)"
     printf "  scx_loader.service: enabled=%s active=%s\n" \
         "$(_se scx_loader.service)" "$(_sa scx_loader.service)"
+    # Installs from older versions only disabled scx_loader; warn, because
+    # the GUI can DBus-activate it and silently stop the scheduler.
+    if [[ "$(_se scx-switch.service)" == "enabled" ]]; then
+        case "$(_se scx_loader.service)" in
+            enabled|disabled)
+                echo
+                echo "  WARNING: scx_loader.service is not masked. Opening the scx-manager"
+                echo "  GUI can DBus-activate it and silently stop your scheduler."
+                echo "  fix: sudo systemctl mask scx_loader.service"
+                ;;
+        esac
+    fi
     echo
     echo "── kernel sched_ext ──"
     printf "  state:    %s\n" "$(cat /sys/kernel/sched_ext/state 2>/dev/null || echo unknown)"
@@ -143,6 +156,7 @@ cmd_off() {
     systemctl disable --now scx-switch.service 2>/dev/null || true
     rm -f "$CONF"
     # Hand control back to scx_loader (DBus-activated; only acts when called).
+    systemctl unmask scx_loader.service 2>/dev/null || true
     systemctl enable --now scx_loader.service 2>/dev/null || true
     cmd_status
 }
@@ -158,6 +172,7 @@ cmd_revert() {
         "$REPO_DIR/scx-revert.sh"
     fi
     # Step 3: re-enable scx_loader.
+    systemctl unmask scx_loader.service 2>/dev/null || true
     systemctl enable --now scx_loader.service 2>/dev/null || true
     cmd_status
 }

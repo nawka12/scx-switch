@@ -71,6 +71,23 @@ sudo install -d -m 0755 "$SBIN_DEST"
 sudo install -m 0755 "$SELF_DIR/scx-switch" "$SBIN_DEST/scx-switch"
 note "installed: $SBIN_DEST/scx-switch"
 
+# ---------- Migrate installs from older scx-switch versions ----------
+# Older versions only *disabled* scx_loader while a scheduler was active.
+# That left it DBus-activatable: opening the scx-manager GUI would start it
+# and (via Conflicts=) silently stop the scheduler. Mask it if an
+# scx-switch config is currently enabled.
+loader_state="$(systemctl is-enabled scx_loader.service 2>/dev/null || true)"
+if systemctl is-enabled --quiet scx-switch.service 2>/dev/null \
+   && [[ "$loader_state" == "enabled" || "$loader_state" == "disabled" ]]; then
+    step "Migrating from older scx-switch (masking scx_loader)"
+    sudo systemctl mask scx_loader.service
+    note "scx_loader.service masked — the GUI can no longer silently stop the scheduler"
+    if ! systemctl is-active --quiet scx-switch.service; then
+        sudo systemctl restart scx-switch.service
+        note "scx-switch.service was stopped (likely by the GUI conflict) — restarted"
+    fi
+fi
+
 # ---------- Done ----------
 step "Done"
 cat <<EOF
